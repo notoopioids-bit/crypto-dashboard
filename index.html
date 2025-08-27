@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>ETH & SOL Lightweight Live Dashboard</title>
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --muted:#6b7280; --accent:#1f6feb;
+      --good:#0b8457; --bad:#b00020; --card-shadow: 0 6px 18px rgba(21,30,47,0.06);
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    body{background:var(--bg); margin:0; padding:20px; color:#0f172a;}
+    .wrap{max-width:980px; margin:0 auto;}
+    header{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;}
+    h1{font-size:18px; margin:0;}
+    .controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+    .card{background:var(--card); padding:14px; border-radius:8px; box-shadow:var(--card-shadow);}
+    .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px;}
+    .k{font-size:13px; color:var(--muted);}
+    .v{font-weight:700; font-size:20px; margin-top:6px;}
+    .small{font-size:12px; color:var(--muted);}
+    .green{color:var(--good);} .red{color:var(--bad);}
+    input[type=text]{padding:6px 8px; border-radius:6px; border:1px solid #e6e9ef; min-width:220px;}
+    select{padding:6px 8px; border-radius:6px; border:1px solid #e6e9ef;}
+    button{background:var(--accent); color:white; border:none; padding:8px 10px; border-radius:6px; cursor:pointer;}
+    button.secondary{background:#eef2ff; color:var(--accent); border:1px solid #dbe7ff;}
+    footer{margin-top:12px; font-size:13px; color:var(--muted);}
+    a{color:var(--accent); text-decoration:none;}
+    @media (max-width:520px){ header{flex-direction:column; align-items:flex-start;} input[type=text]{min-width:140px; width:100%} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>ETH & SOL — Lightweight Live Dashboard</h1>
+      <div class="controls">
+        <label class="k">Auto refresh
+          <select id="interval">
+            <option value="60">1m</option>
+            <option value="300" selected>5m</option>
+            <option value="900">15m</option>
+            <option value="1800">30m</option>
+          </select>
+        </label>
+        <button id="refreshBtn">Update now</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="k">Ethereum (ETH)</div>
+        <div class="v" id="ethPrice">—</div>
+        <div class="small">24h: <span id="ethChange">—</span> • Market cap: <span id="ethMcap">—</span></div>
+      </div>
+
+      <div class="card">
+        <div class="k">Solana (SOL)</div>
+        <div class="v" id="solPrice">—</div>
+        <div class="small">24h: <span id="solChange">—</span> • Market cap: <span id="solMcap">—</span></div>
+      </div>
+
+      <div class="card">
+        <div class="k">Market Sentiment</div>
+        <div class="v" id="fgValue">—</div>
+        <div class="small" id="fgLabel">—</div>
+        <div style="margin-top:8px" class="small">Source: <a href="https://alternative.me/crypto/fear-and-greed-index/" target="_blank">alternative.me</a></div>
+      </div>
+
+      <div class="card">
+        <div class="k">Federal Reserve (FRED)</div>
+        <div class="small">FRED key (optional):</div>
+        <div style="margin-top:6px;">
+          <input id="fredKey" type="text" placeholder="Paste FRED API key (optional)" />
+          <button id="saveFred" class="secondary">Save</button>
+        </div>
+        <div style="margin-top:10px" class="small">Effective rate: <span id="fedEff">—</span></div>
+        <div class="small">Last obs date: <span id="fedDate">—</span></div>
+      </div>
+
+    </div>
+
+    <div style="display:flex; gap:12px; margin-top:12px; flex-wrap:wrap;">
+      <div class="card" style="flex:1;">
+        <div class="k">Last update</div>
+        <div class="v" id="lastUpdate">—</div>
+        <div class="small" style="margin-top:6px">Note: keep refresh interval moderate to avoid hitting public API rate limits.</div>
+      </div>
+
+      <div class="card" style="width:320px;">
+        <div class="k">Quick links</div>
+        <div class="small" style="margin-top:6px">
+          <div><a href="https://www.coingecko.com/" target="_blank">CoinGecko</a></div>
+          <div><a href="https://alternative.me/crypto/fear-and-greed-index/" target="_blank">Fear & Greed</a></div>
+          <div><a href="https://fred.stlouisfed.org/" target="_blank">FRED</a></div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <div>To host on GitHub Pages: create a repo, add this file as <code>index.html</code>, push to <code>main</code>, then enable Pages (Settings → Pages).</div>
+    </footer>
+  </div>
+
+<script>
+/* Lightweight dashboard script
+   - CoinGecko: ETH & SOL (price, 24h change, market cap)
+   - alternative.me: Fear & Greed index
+   - FRED (optional): FEDFUNDS (effective funds rate)
+   Save FRED key to localStorage for convenience.
+*/
+
+const el = id => document.getElementById(id);
+const fmt = n => {
+  if (n===null || n===undefined || isNaN(n)) return '—';
+  if (Math.abs(n) >= 1e12) return (n/1e12).toFixed(2)+'T';
+  if (Math.abs(n) >= 1e9) return (n/1e9).toFixed(2)+'B';
+  if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(2)+'M';
+  return Number(n).toLocaleString(undefined, {maximumFractionDigits:2});
+};
+const pct = n => (n===null||n===undefined||isNaN(n))? '—' : (n.toFixed(2)+'%');
+
+async function fetchCoinGecko(){
+  try {
+    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum,solana&vs_currencies=usd&include_market_cap=true&include_24hr_change=true');
+    if (!r.ok) throw new Error('CoinGecko error');
+    const j = await r.json();
+    const eth = j.ethereum;
+    const sol = j.solana;
+    el('ethPrice').textContent = eth && eth.usd ? ('$' + Number(eth.usd).toLocaleString()) : '—';
+    el('ethChange').textContent = eth && eth.usd_24h_change ? pct(eth.usd_24h_change) : '—';
+    el('ethChange').className = (eth && eth.usd_24h_change >= 0) ? 'green' : 'red';
+    el('ethMcap').textContent = eth && eth.usd_market_cap ? fmt(eth.usd_market_cap) : '—';
+
+    el('solPrice').textContent = sol && sol.usd ? ('$' + Number(sol.usd).toLocaleString()) : '—';
+    el('solChange').textContent = sol && sol.usd_24h_change ? pct(sol.usd_24h_change) : '—';
+    el('solChange').className = (sol && sol.usd_24h_change >= 0) ? 'green' : 'red';
+    el('solMcap').textContent = sol && sol.usd_market_cap ? fmt(sol.usd_market_cap) : '—';
+  } catch (e) {
+    console.warn('CoinGecko fetch failed', e);
+  }
+}
+
+async function fetchFearGreed(){
+  try {
+    const r = await fetch('https://api.alternative.me/fng/?limit=1&format=json');
+    if (!r.ok) throw new Error('Fear&Greed error');
+    const j = await r.json();
+    const d = j.data && j.data[0];
+    if (d){
+      el('fgValue').textContent = d.value;
+      el('fgLabel').textContent = d.value_classification || '';
+    } else {
+      el('fgValue').textContent = '—';
+      el('fgLabel').textContent = '—';
+    }
+  } catch (e) {
+    console.warn('Fear & Greed fetch failed', e);
+  }
+}
+
+async function fetchFRED(){
+  const key = localStorage.getItem('fredKey') || '';
+  if (!key) return;
+  try {
+    // fetch latest effective funds rate (FEDFUNDS) - single most recent data point
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=FEDFUNDS&api_key=${encodeURIComponent(key)}&file_type=json&sort_order=desc&limit=1`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('FRED error');
+    const j = await r.json();
+    const obs = j.observations && j.observations[0];
+    if (obs){
+      el('fedEff').textContent = obs.value + '%';
+      el('fedDate').textContent = obs.date;
+    }
+  } catch (e) {
+    console.warn('FRED fetch failed', e);
+  }
+}
+
+async function updateAll(){
+  el('lastUpdate').textContent = new Date().toLocaleString();
+  await Promise.allSettled([fetchCoinGecko(), fetchFearGreed(), fetchFRED()]);
+}
+
+// UI wiring
+el('refreshBtn').addEventListener('click', updateAll);
+el('saveFred').addEventListener('click', ()=>{
+  const v = el('fredKey').value.trim();
+  if (v){
+    localStorage.setItem('fredKey', v);
+    alert('FRED API key saved locally in your browser (localStorage).');
+    fetchFRED();
+  } else {
+    localStorage.removeItem('fredKey');
+    alert('FRED API key removed from local storage.');
+    el('fedEff').textContent = '—';
+    el('fedDate').textContent = '—';
+  }
+});
+
+// auto refresh
+let timer = null;
+function startAuto(){
+  if (timer) clearInterval(timer);
+  const sec = Number(el('interval').value) || 300;
+  timer = setInterval(updateAll, sec*1000);
+}
+el('interval').addEventListener('change', ()=>{ localStorage.setItem('dashInterval', el('interval').value); startAuto(); });
+
+window.addEventListener('load', ()=>{
+  // restore interval and fred key if present
+  const iv = localStorage.getItem('dashInterval');
+  if (iv) el('interval').value = iv;
+  const fk = localStorage.getItem('fredKey');
+  if (fk) el('fredKey').value = fk;
+  updateAll();
+  startAuto();
+});
+</script>
+</body>
+</html>
